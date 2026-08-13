@@ -72,12 +72,17 @@ jobs:
       - name: Set up Node and dependencies
         uses: ./.github/actions/composite/setupNode
 
-      - name: Verify targeted test and formatting
+      - name: Run targeted Jest test
         shell: bash
-        run: |
-          npm run test -- tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts --runInBand
-          npx eslint --max-warnings=0 src/libs/ReportUtils.ts tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts
-          git diff --check
+        run: npm run test -- tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts --runInBand
+
+      - name: Run ESLint on changed files
+        shell: bash
+        run: npx eslint --max-warnings=0 src/libs/ReportUtils.ts tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts
+
+      - name: Check diff whitespace
+        shell: bash
+        run: git diff --check
 
       - name: Commit verified implementation
         shell: bash
