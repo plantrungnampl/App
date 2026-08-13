@@ -1,0 +1,98 @@
+name: Apply issue 98439 patch
+
+on:
+  push:
+    branches:
+      - fix/98439-remove-task-original-message-text-html
+    paths:
+      - .github/workflows/issue98439-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/98439-remove-task-original-message-text-html
+          fetch-depth: 2
+
+      - name: Apply focused patch and regression test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          report_utils = Path('src/libs/ReportUtils.ts')
+          source = report_utils.read_text()
+
+          old = '''    const originalMessage = {
+              taskReportID,
+              type: actionName,
+              text: message,
+              html: message,
+              whisperedTo: [],
+          };'''
+          new = '''    const originalMessage = {
+              taskReportID,
+              type: actionName,
+              whisperedTo: [],
+          };'''
+
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one optimistic task originalMessage block, found {count}')
+
+          # RED state: confirm the redundant fields are present before the production change.
+          assert 'text: message,' in old and 'html: message,' in old
+
+          report_utils.write_text(source.replace(old, new, 1))
+
+          test = Path('tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts')
+          test.write_text("""import {buildOptimisticTaskReportAction} from '@libs/ReportUtils';
+
+          import CONST from '@src/CONST';
+
+          describe('buildOptimisticTaskReportAction', () => {
+              const taskReportID = '123';
+              const message = 'Task action message';
+              const actionNames = [
+                  CONST.REPORT.ACTIONS.TYPE.TASK_COMPLETED,
+                  CONST.REPORT.ACTIONS.TYPE.TASK_REOPENED,
+                  CONST.REPORT.ACTIONS.TYPE.TASK_CANCELLED,
+              ] as const;
+
+              it.each(actionNames)('omits redundant originalMessage text and html for %s', (actionName) => {
+                  const action = buildOptimisticTaskReportAction(taskReportID, actionName, undefined, message);
+
+                  expect(action.originalMessage).not.toHaveProperty('text');
+                  expect(action.originalMessage).not.toHaveProperty('html');
+                  expect(action.message?.[0]?.text).toBe(message);
+              });
+          });
+          """)
+
+          patched = report_utils.read_text()
+          if old in patched:
+              raise SystemExit('Redundant optimistic task fields are still present after patch')
+          if new not in patched:
+              raise SystemExit('Expected patched optimistic task block is missing')
+          PY
+
+          git diff --check
+
+      - name: Replace bootstrap commit with a single implementation commit
+        env:
+          BASE_SHA: aaf6d38d4bd21145c90e4e22da9b87fbb5fdb6b6
+        shell: bash
+        run: |
+          rm .github/workflows/issue98439-apply.yml
+          git config user.name "plantrungnampl"
+          git config user.email "antrungnam1234@gmail.com"
+          git reset --soft "$BASE_SHA"
+          git add -A
+          git commit -m "Remove redundant text/html from optimistic task actions"
+          git push --force-with-lease origin HEAD:fix/98439-remove-task-original-message-text-html
