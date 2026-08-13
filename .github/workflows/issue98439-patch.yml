@@ -51,26 +51,20 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           path = Path('src/libs/ReportUtils.ts')
           source = path.read_text()
-          marker = 'function buildOptimisticTaskReportAction('
-          start = source.index(marker)
-          try:
-              end = source.index('\nfunction ', start + len(marker))
-          except ValueError:
-              end = len(source)
-          function_source = source[start:end]
-
-          lines = ('        text: message,\n', '        html: message,\n')
-          for line in lines:
-              count = function_source.count(line)
-              if count != 1:
-                  raise SystemExit(f'Expected exactly one {line.strip()} in buildOptimisticTaskReportAction, found {count}')
-              function_source = function_source.replace(line, '', 1)
-
-          path.write_text(source[:start] + function_source + source[end:])
+          pattern = re.compile(
+              r'(const originalMessage = \{\n\s*taskReportID,\n\s*type: actionName,\n)'
+              r'\s*text: message,\n\s*html: message,\n'
+              r'(\s*whisperedTo: \[\],\n\s*\};)'
+          )
+          patched, count = pattern.subn(r'\1\2', source, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one task originalMessage structure, replaced {count}')
+          path.write_text(patched)
           PY
 
       - name: Set up Node and dependencies
