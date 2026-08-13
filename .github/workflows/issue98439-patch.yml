@@ -81,12 +81,12 @@ jobs:
               text: message,
               html: message,
               whisperedTo: [],
-          };'''
+          };'''.replace('              ', '        ')
           new = '''    const originalMessage = {
               taskReportID,
               type: actionName,
               whisperedTo: [],
-          };'''
+          };'''.replace('              ', '        ')
 
           count = source.count(old)
           if count != 1:
