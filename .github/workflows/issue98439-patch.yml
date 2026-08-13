@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           cat > tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts <<'EOF'
+          import {getOriginalMessage, getReportActionText} from '@libs/ReportActionsUtils';
           import {buildOptimisticTaskReportAction} from '@libs/ReportUtils';
 
           import CONST from '@src/CONST';
@@ -39,10 +40,11 @@ jobs:
 
               it.each(actionNames)('omits redundant originalMessage text and html for %s', (actionName) => {
                   const action = buildOptimisticTaskReportAction(taskReportID, actionName, undefined, message);
+                  const originalMessage = getOriginalMessage(action);
 
-                  expect(action.originalMessage).not.toHaveProperty('text');
-                  expect(action.originalMessage).not.toHaveProperty('html');
-                  expect(action.message?.[0]?.text).toBe(message);
+                  expect(originalMessage).not.toHaveProperty('text');
+                  expect(originalMessage).not.toHaveProperty('html');
+                  expect(getReportActionText(action)).toBe(message);
               });
           });
           EOF
