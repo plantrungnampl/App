@@ -1,0 +1,111 @@
+name: Issue 98439 patch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/issue98439-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout clean feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/98439-remove-redundant-task-fields
+          fetch-depth: 2
+
+      - name: Add regression test first
+        shell: bash
+        run: |
+          cat > tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts <<'EOF'
+          import {buildOptimisticTaskReportAction} from '@libs/ReportUtils';
+
+          import CONST from '@src/CONST';
+
+          describe('buildOptimisticTaskReportAction', () => {
+              const taskReportID = '123';
+              const message = 'Task action message';
+              const actionNames = [
+                  CONST.REPORT.ACTIONS.TYPE.TASK_COMPLETED,
+                  CONST.REPORT.ACTIONS.TYPE.TASK_REOPENED,
+                  CONST.REPORT.ACTIONS.TYPE.TASK_CANCELLED,
+              ] as const;
+
+              it.each(actionNames)('omits redundant originalMessage text and html for %s', (actionName) => {
+                  const action = buildOptimisticTaskReportAction(taskReportID, actionName, undefined, message);
+
+                  expect(action.originalMessage).not.toHaveProperty('text');
+                  expect(action.originalMessage).not.toHaveProperty('html');
+                  expect(action.message?.[0]?.text).toBe(message);
+              });
+          });
+          EOF
+
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/composite/setupNode
+
+      - name: Verify regression test is red before source change
+        shell: bash
+        run: |
+          set +e
+          npm run test -- tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts --runInBand > /tmp/red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/red.log
+          if [ "$status" -eq 0 ]; then
+            echo 'Regression test unexpectedly passed before the production change.'
+            exit 1
+          fi
+          if ! grep -Eq "originalMessage|text|html|toHaveProperty" /tmp/red.log; then
+            echo 'Regression test failed for an unrelated reason.'
+            exit 1
+          fi
+
+      - name: Remove redundant task originalMessage fields
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/libs/ReportUtils.ts')
+          source = path.read_text()
+          old = '''    const originalMessage = {
+              taskReportID,
+              type: actionName,
+              text: message,
+              html: message,
+              whisperedTo: [],
+          };'''
+          new = '''    const originalMessage = {
+              taskReportID,
+              type: actionName,
+              whisperedTo: [],
+          };'''
+
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one optimistic task originalMessage block, found {count}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+
+      - name: Verify targeted test and formatting
+        shell: bash
+        run: |
+          npm run test -- tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts --runInBand
+          npx eslint --max-warnings=0 src/libs/ReportUtils.ts tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts
+          git diff --check
+
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          git config user.name "Elite"
+          git config user.email "53697836+plantrungnampl@users.noreply.github.com"
+          git add src/libs/ReportUtils.ts tests/unit/ReportUtilsBuildOptimisticTaskReportActionTest.ts
+          git commit -m "Remove redundant text/html from optimistic task actions"
+          git push origin HEAD:fix/98439-remove-redundant-task-fields
