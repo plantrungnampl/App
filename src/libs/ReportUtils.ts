@@ -8190,8 +8190,6 @@ function buildOptimisticTaskReportAction(
     const originalMessage = {
         taskReportID,
         type: actionName,
-        text: message,
-        html: message,
         whisperedTo: [],
     };
     // Falls back to module-level delegateEmail (from Onyx.connect) for callers not yet migrated; will be removed in https://github.com/Expensify/App/issues/66425
